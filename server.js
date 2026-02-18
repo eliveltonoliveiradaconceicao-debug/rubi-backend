@@ -13,7 +13,7 @@ app.post("/api/prospect", async (req, res) => {
   try {
     const { niche, city, state } = req.body;
 
-    const query = `${niche} in ${city}, ${state}, Brazil`;
+    const query = `${niche} em ${city} ${state}`;
 
     const searchResponse = await axios.get(
       "https://maps.googleapis.com/maps/api/place/textsearch/json",
@@ -25,10 +25,20 @@ app.post("/api/prospect", async (req, res) => {
       }
     );
 
+    console.log("Google Status:", searchResponse.data.status);
+    console.log("Google Response:", searchResponse.data);
+
+    if (searchResponse.data.status !== "OK") {
+      return res.json({
+        google_status: searchResponse.data.status,
+        google_error: searchResponse.data.error_message || null
+      });
+    }
+
     const results = searchResponse.data.results;
 
     const detailedResults = await Promise.all(
-      results.slice(0, 10).map(async (place) => {
+      results.slice(0, 5).map(async (place) => {
         const details = await axios.get(
           "https://maps.googleapis.com/maps/api/place/details/json",
           {
@@ -47,12 +57,12 @@ app.post("/api/prospect", async (req, res) => {
 
     res.json(detailedResults);
   } catch (error) {
-    console.error(error);
+    console.error("Erro geral:", error.response?.data || error.message);
     res.status(500).json({ error: "Erro ao buscar dados" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
