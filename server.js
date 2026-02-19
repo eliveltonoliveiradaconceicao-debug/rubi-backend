@@ -1,4 +1,46 @@
 require("dotenv").config();
+const mercadopago = require("mercadopago");
+const express = require("express");
+const axios = require("axios");
+const cors = require("cors");
+
+mercadopago.configure({
+  access_token: process.env.MP_ACCESS_TOKEN
+});
+const PLANS = {
+  essencial_mensal: "bfd74a75f36644a0855f4b56d3ef7b03",
+  pro_mensal: "4caeeeca2a24146b0fec8a11cecd2dd1",
+  black_mensal: "72e04642f6c7419d98eaac1e225f3ac6",
+  essencial_anual: "73bc67b4dd24d5e2b0d8b540b974c9c",
+  pro_anual: "6bd630178c5afdbb9016a70a4b9b587",
+  black_anual: "24dd3a96f9b742958d85786187b1582"
+};
+
+app.post("/create-subscription", async (req, res) => {
+  try {
+    const { plan_key, email } = req.body;
+
+    const plan_id = PLANS[plan_key];
+
+    if (!plan_id) {
+      return res.status(400).json({ error: "Plano inválido" });
+    }
+
+    const subscription = await mercadopago.preapproval.create({
+      preapproval_plan_id: plan_id,
+      payer_email: email,
+      back_url: "https://rubidigital.base44.app/dashboard",
+      status: "pending"
+    });
+
+    res.json({ init_point: subscription.body.init_point });
+
+  } catch (error) {
+    console.error("Erro ao criar assinatura:", error);
+    res.status(500).json({ error: "Erro ao criar assinatura" });
+  }
+});
+
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -102,3 +144,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
