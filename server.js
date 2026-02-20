@@ -7,6 +7,11 @@ const cors = require("cors");
 mercadopago.configure({
   access_token: process.env.MP_ACCESS_TOKEN
 });
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
 const PLANS = {
   essencial_mensal: "bfd74a75f36644a0855f4b56d3ef7b03",
   pro_mensal: "4caeeeca2a24146b0fec8a11cecd2dd1",
@@ -40,10 +45,6 @@ app.post("/create-subscription", async (req, res) => {
     res.status(500).json({ error: "Erro ao criar assinatura" });
   }
 });
-
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
@@ -140,5 +141,6 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
