@@ -1,11 +1,12 @@
 require("dotenv").config();
-const mercadopago = require("mercadopago");
+
 const express = require("express");
-const axios = require("axios");
 const cors = require("cors");
 
-mercadopago.configure({
-  access_token: process.env.MP_ACCESS_TOKEN
+const { MercadoPagoConfig, PreApproval } = require("mercadopago");
+
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN
 });
 
 const app = express();
@@ -31,14 +32,16 @@ app.post("/create-subscription", async (req, res) => {
       return res.status(400).json({ error: "Plano inválido" });
     }
 
-    const subscription = await mercadopago.preapproval.create({
-      preapproval_plan_id: plan_id,
-      payer_email: email,
-      back_url: "https://rubidigital.base44.app/dashboard",
-      status: "pending"
-    });
+    const preapproval = new PreApproval(client);
 
-    res.json({ init_point: subscription.body.init_point });
+const subscription = await preapproval.create({
+  preapproval_plan_id: plan_id,
+  payer_email: email,
+  back_url: "https://rubidigital.base44.app/dashboard",
+  status: "pending"
+});
+
+    res.json({ init_point: subscription.init_point });
 
   } catch (error) {
     console.error("Erro ao criar assinatura:", error);
@@ -141,6 +144,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
