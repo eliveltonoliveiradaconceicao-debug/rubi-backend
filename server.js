@@ -24,27 +24,32 @@ const PLANS = {
 
 app.post("/create-subscription", async (req, res) => {
   try {
+    console.log("BODY RECEBIDO:", req.body);
+
     const { plan_key, email } = req.body;
+
+    console.log("PLAN_KEY RECEBIDO:", plan_key);
 
     const plan_id = PLANS[plan_key];
 
     if (!plan_id) {
+      console.log("Plano não encontrado no objeto PLANS");
       return res.status(400).json({ error: "Plano inválido" });
     }
 
     const preapproval = new PreApproval(client);
 
-const subscription = await preapproval.create({
-  preapproval_plan_id: plan_id,
-  payer_email: email,
-  back_url: "https://rubidigital.base44.app/dashboard",
-  status: "pending"
-});
+    const subscription = await preapproval.create({
+      preapproval_plan_id: plan_id,
+      payer_email: email,
+      back_url: "https://rubidigital.base44.app/dashboard",
+      status: "pending"
+    });
 
     res.json({ init_point: subscription.init_point });
 
   } catch (error) {
-    console.error("Erro ao criar assinatura:", error);
+    console.error("ERRO MP:", error);
     res.status(500).json({ error: "Erro ao criar assinatura" });
   }
 });
@@ -144,6 +149,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
