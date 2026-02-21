@@ -3,55 +3,157 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
-const { MercadoPagoConfig, PreApproval } = require("mercadopago");
+// ====== MERCADO PAGO ASSINATURAS (RUBI) ======
+const axios = require("axios");
 
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN
-});
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
+// 1) Coloque seus PLAN IDs aqui (ou pegue de ENV do Render)
 const PLANS = {
-  essencial_mensal: "51f9c6b5c3134a83bd953a775fa3282f",
-  pro_mensal: "5b2a3c08002c4bfc90a1a35b3fa4a32f",
-  black_mensal: "d024551670154b2fa8c9b22bb8544e63",
-  essencial_anual: "51b85976dd354b4fb9e3e2487116caa9",
-  pro_anual: "25ce3dd87a4742b091398822308d5b4f",
-  black_anual: "8c982a7456854ee38c32bad21d23e98a"
+  essencial_mensal: process.env.MP_PLAN_ESSENCIAL_MENSAL || "COLE_AQUI_O_ID",
+  // exemplo:
+  // pro_mensal: process.env.MP_PLAN_PRO_MENSAL || "COLE_AQUI_O_ID",
 };
 
-app.post("/create-subscription", async (req, res) => {
+// 2) Configs obrigatórias
+const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN; // APP_USR-...
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://rubidigital.base44.app"; // seu Base44
+const BACKEND_URL = process.env.BACKEND_URL || "https://rubi-backend.onrender.com"; // seu Render
+
+function assertEnv() {
+  if (!MP_ACCESS_TOKEN) throw new Error("MP_ACCESS_TOKEN não configurado no Render.");
+}
+
+function mpHeaders() {
+  return {
+    Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function mpGet(url) {
+  return axios.get(`https://api.mercadopago.com${url}`, { headers: mpHeaders() });
+}
+
+async function mpPost(url, data) {
+  return axios.post(`https://api.mercadopago.com${url}`, data, { headers: mpHeaders() });
+}
+
+/**
+ * Detecta automaticamente se o plano é:
+ * - NOVO: /subscriptions/v1/plans/{id}  -> criar em /subscriptions/v1/subscriptions com { plan_id }
+ * - ANTIGO: /preapproval_plan/{id}      -> criar em /preapproval com { preapproval_plan_id }
+ */
+async function detectPlanType(planId) {
+  // tenta NOVO
   try {
+    await mpGet(`/subscriptions/v1/plans/${planId}`);
+    return { type: "NEW", createPath: "/subscriptions/v1/subscriptions", planField: "plan_id" };
+  } catch (e) {
+    // continua
+  }
+
+  // tenta ANTIGO
+  try {
+    await mpGet(`/preapproval_plan/${planId}`);
+    return { type: "OLD", createPath: "/preapproval", planField: "preapproval_plan_id" };
+  } catch (e) {
+    // se nenhum dos dois, é id errado/token errado/ambiente errado
+  }
+
+  return null;
+}
+
+function pickRedirectUrl(mpData) {
+  return (
+    mpData?.init_point ||
+    mpData?.sandbox_init_point ||
+    mpData?.checkout_url ||
+    mpData?.url ||
+    null
+  );
+}
+
+// ✅ ROTA: Base44 envia { plan_key, email }
+app.post("/api/assinaturas/criar", async (req, res) => {
+  try {
+    assertEnv();
+
+    const { plan_key, email } = req.body || {};
     console.log("BODY RECEBIDO:", req.body);
 
-    const { plan_key, email } = req.body;
-
-    console.log("PLAN_KEY RECEBIDO:", plan_key);
-
-    const plan_id = PLANS[plan_key];
-
-    if (!plan_id) {
-      console.log("Plano não encontrado no objeto PLANS");
-      return res.status(400).json({ error: "Plano inválido" });
+    if (!plan_key || !email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Campos obrigatórios: plan_key e email",
+      });
     }
 
-    const preapproval = new PreApproval(client);
-    
-console.log("PLAN_ID ENVIADO PARA MP:", plan_id);
-    const subscription = await preapproval.create({
-  preapproval_plan_id: plan_id,
-  payer_email: email,
-  back_url: "https://rubidigital.base44.app/dashboard"
+    const planId = PLANS[plan_key];
+    if (!planId) {
+      return res.status(400).json({
+        ok: false,
+        error: `plan_key inválido (${plan_key}). Chaves válidas: ${Object.keys(PLANS).join(", ")}`,
+      });
+    }
+
+    const detected = await detectPlanType(planId);
+    if (!detected) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Não consegui validar esse PLAN_ID no Mercado Pago. Verifique: (1) ID do plano (2) token/conta correta (3) produção vs teste.",
+        planId,
+      });
+    }
+
+    const back_url = `${FRONTEND_URL}/assinatura/retorno`; // você pode mudar esse caminho no Base44
+    const notification_url = `${BACKEND_URL}/api/webhooks/mercadopago`; // opcional
+
+    // Payload mínimo aceito (evita o 400 Parameters passed are invalid)
+    const payload = {
+      [detected.planField]: planId,     // plan_id OU preapproval_plan_id
+      payer_email: email,              // ⚠️ email -> payer_email
+      reason: `RUBI - ${plan_key}`,     // obrigatório na maioria dos casos
+      back_url,                        // obrigatório
+      external_reference: email,        // ajuda no rastreio
+      notification_url,                // opcional (mas recomendado)
+    };
+
+    console.log("CRIANDO ASSINATURA NO MP:", detected, payload);
+
+    const { data } = await mpPost(detected.createPath, payload);
+
+    const redirect_url = pickRedirectUrl(data);
+
+    return res.status(200).json({
+      ok: true,
+      plan_key,
+      planId,
+      mp_type: detected.type,
+      redirect_url, // ✅ o Base44 pode redirecionar pra cá
+      mp: data,      // retorna tudo pra debug
+    });
+  } catch (err) {
+    const status = err.response?.status || 500;
+    const mpData = err.response?.data;
+
+    console.error("ERRO MP STATUS:", status);
+    console.error("ERRO MP DATA:", JSON.stringify(mpData, null, 2));
+    console.error("ERRO GERAL:", err.message);
+
+    return res.status(status).json({
+      ok: false,
+      error: "Falha ao criar assinatura no Mercado Pago",
+      status,
+      mp: mpData || null,
+      message: err.message,
+    });
+  }
 });
 
-    res.json({ init_point: subscription.init_point });
-
-  } catch (error) {
-    console.error("ERRO MP:", error);
-    res.status(500).json({ error: "Erro ao criar assinatura" });
-  }
+// (Opcional) Webhook para você registrar pagamentos/assinaturas
+app.post("/api/webhooks/mercadopago", (req, res) => {
+  console.log("WEBHOOK MP:", req.body);
+  res.sendStatus(200);
 });
 
 const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
@@ -149,6 +251,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
