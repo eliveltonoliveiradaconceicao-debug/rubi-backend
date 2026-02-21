@@ -14,12 +14,12 @@ app.use(cors());
 app.use(express.json());
 
 const PLANS = {
-  essencial_mensal: "bfd74a75f36644a0855f4b56d3ef7b03",
-  pro_mensal: "4caeeeca2a24146b0fec8a11cecd2dd1",
-  black_mensal: "72e04642f6c7419d98eaac1e225f3ac6",
-  essencial_anual: "73bc67b4dd24d5e2b0d8b540b974c9c",
-  pro_anual: "6bd630178c5afdbb9016a70a4b9b587",
-  black_anual: "24dd3a96f9b742958d85786187b1582"
+  essencial_mensal: "51f9c6b5c3134a83bd953a775fa3282f",
+  pro_mensal: "5b2a3c08002c4bfc90a1a35b3fa4a32f",
+  black_mensal: "d024551670154b2fa8c9b22bb8544e63",
+  essencial_anual: "51b85976dd354b4fb9e3e2487116caa9",
+  pro_anual: "25ce3dd87a4742b091398822308d5b4f",
+  black_anual: "8c982a7456854ee38c32bad21d23e98a"
 };
 
 app.post("/create-subscription", async (req, res) => {
@@ -150,6 +150,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
