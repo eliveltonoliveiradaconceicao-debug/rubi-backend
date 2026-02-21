@@ -40,11 +40,12 @@ app.post("/create-subscription", async (req, res) => {
     const preapproval = new PreApproval(client);
 
     const subscription = await preapproval.create({
-      preapproval_plan_id: plan_id,
-      payer_email: email,
-      back_url: "https://rubidigital.base44.app/dashboard",
-      status: "pending"
-    });
+  preapproval_plan_id: plan_id,
+  payer_email: email,
+  reason: "Assinatura RUBI",
+  back_url: "https://rubidigital.base44.app/dashboard",
+  status: "pending"
+});
 
     res.json({ init_point: subscription.init_point });
 
@@ -149,6 +150,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
