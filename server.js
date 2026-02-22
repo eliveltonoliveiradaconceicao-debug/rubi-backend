@@ -22,7 +22,6 @@ const PLANS = {
 };
   // exemplo:
   // pro_mensal: process.env.MP_PLAN_PRO_MENSAL || "COLE_AQUI_O_ID",
-};
 
 // 2) Configs obrigatórias
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN; // APP_USR-...
@@ -234,6 +233,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
