@@ -80,77 +80,49 @@ function pickRedirectUrl(mpData) {
 // ✅ ROTA: Base44 envia { plan_key, email }
 app.post("/api/assinaturas/criar", async (req, res) => {
   try {
-    assertEnv();
-
     const { plan_key, email } = req.body || {};
-    console.log("BODY RECEBIDO:", req.body);
 
     if (!plan_key || !email) {
-      return res.status(400).json({
-        ok: false,
-        error: "Campos obrigatórios: plan_key e email",
-      });
+      return res.status(400).json({ ok: false, error: "Campos obrigatórios: plan_key e email" });
     }
 
     const planId = PLANS[plan_key];
     if (!planId) {
       return res.status(400).json({
         ok: false,
-        error: `plan_key inválido (${plan_key}). Chaves válidas: ${Object.keys(PLANS).join(", ")}`,
+        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
       });
     }
 
-    const detected = await detectPlanType(planId);
-    if (!detected) {
+    // Busca o plano e pega o init_point (link de checkout)
+    const { data } = await axios.get(
+      `https://api.mercadopago.com/preapproval_plan/${planId}`,
+      { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` } }
+    );
+
+    if (!data?.init_point) {
       return res.status(400).json({
         ok: false,
-        error:
-          "Não consegui validar esse PLAN_ID no Mercado Pago. Verifique: (1) ID do plano (2) token/conta correta (3) produção vs teste.",
+        error: "Plano não retornou init_point. Confirme se esse ID é de preapproval_plan.",
         planId,
+        mp: data
       });
     }
-
-    const back_url = `${FRONTEND_URL}/assinatura/retorno`; // você pode mudar esse caminho no Base44
-    const notification_url = `${BACKEND_URL}/api/webhooks/mercadopago`; // opcional
-
-    // Payload mínimo aceito (evita o 400 Parameters passed are invalid)
-    const payload = {
-      [detected.planField]: planId,     // plan_id OU preapproval_plan_id
-      payer_email: email,              // ⚠️ email -> payer_email
-      reason: `RUBI - ${plan_key}`,     // obrigatório na maioria dos casos
-      back_url,                        // obrigatório
-      external_reference: email,        // ajuda no rastreio
-      notification_url,                // opcional (mas recomendado)
-    };
-
-    console.log("CRIANDO ASSINATURA NO MP:", detected, payload);
-
-    const { data } = await mpPost(detected.createPath, payload);
-
-    const redirect_url = pickRedirectUrl(data);
 
     return res.status(200).json({
       ok: true,
       plan_key,
       planId,
-      mp_type: detected.type,
-      redirect_url, // ✅ o Base44 pode redirecionar pra cá
-      mp: data,      // retorna tudo pra debug
+      redirect_url: data.init_point
     });
   } catch (err) {
     const status = err.response?.status || 500;
-    const mpData = err.response?.data;
-
-    console.error("ERRO MP STATUS:", status);
-    console.error("ERRO MP DATA:", JSON.stringify(mpData, null, 2));
-    console.error("ERRO GERAL:", err.message);
-
     return res.status(status).json({
       ok: false,
-      error: "Falha ao criar assinatura no Mercado Pago",
+      error: "Falha ao obter init_point do plano",
       status,
-      mp: mpData || null,
-      message: err.message,
+      mp: err.response?.data || null,
+      message: err.message
     });
   }
 });
@@ -256,6 +228,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
