@@ -99,6 +99,66 @@ app.post("/api/assinaturas/criar", async (req, res) => {
       });
     }
 
+    // STATUS DA ASSINATURA (SEM BANCO)
+// GET /api/assinaturas/status?email=...&plan_key=essencial_mensal
+app.get("/api/assinaturas/status", async (req, res) => {
+  try {
+    const email = String(req.query.email || "").trim();
+    const plan_key = String(req.query.plan_key || "").trim(); // opcional
+
+    if (!email) return res.status(400).json({ ok: false, error: "email é obrigatório" });
+
+    const planId = plan_key ? PLANS[plan_key] : null;
+    if (plan_key && !planId) {
+      return res.status(400).json({
+        ok: false,
+        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`,
+      });
+    }
+
+    const params = {
+      payer_email: email,
+      sort: "date_created",
+      order: "desc",
+      limit: 10,
+    };
+    if (planId) params.preapproval_plan_id = planId;
+
+    const { data } = await axios.get("https://api.mercadopago.com/preapproval/search", {
+      headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
+      params,
+    });
+
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const last = results[0] || null;
+
+    const status = (last?.status || "none").toLowerCase();
+    const active = status === "authorized" || status === "active";
+
+    return res.json({
+      ok: true,
+      email,
+      plan_key: plan_key || null,
+      active,
+      status,
+      preapproval_id: last?.id || null,
+      found: results.length,
+    });
+  } catch (err) {
+    const status = err.response?.status || 500;
+    return res.status(status).json({
+      ok: false,
+      error: "Falha ao consultar status no Mercado Pago",
+      status,
+      mp: err.response?.data || null,
+      message: err.message,
+    });
+  }
+});
+    app.get("/api/health", (req, res) => {
+  res.json({ ok: true, message: "backend online" });
+});
+    
     // Busca o plano e pega o init_point (link de checkout)
     const { data } = await axios.get(
       `https://api.mercadopago.com/preapproval_plan/${planId}`,
@@ -233,6 +293,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
