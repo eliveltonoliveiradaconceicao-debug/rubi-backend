@@ -14,7 +14,7 @@ const axios = require("axios");
 // 1) Coloque seus PLAN IDs aqui (ou pegue de ENV do Render)
 const PLANS = {
   pro: {
-    id: "25ce3dd87a4742b091398822308d5b4f",
+    id: "5b2a3c08002c4bfc90a1a35b3fa4a32f",
     name: "RUBI Pro",
     price: 30
   }
