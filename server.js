@@ -157,8 +157,7 @@ app.get("/api/assinaturas/status", async (req, res) => {
     app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "backend online" });
 });
-    
-    // Busca o plano e pega o init_point (link de checkout)
+  
     // Criar assinatura correta
 const { data } = await axios.post(
   "https://api.mercadopago.com/preapproval",
