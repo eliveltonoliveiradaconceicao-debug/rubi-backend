@@ -81,7 +81,12 @@ function pickRedirectUrl(mpData) {
   );
 }
 
-// ✅ ROTA: Base44 envia { plan_key, email }
+// ====== HEALTH (fora de qualquer rota) ======
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, message: "backend online" });
+});
+
+// ====== CRIAR ASSINATURA (APENAS 1 ROTA) ======
 app.post("/api/assinaturas/criar", async (req, res) => {
   try {
     const { plan_key, email } = req.body || {};
@@ -90,95 +95,15 @@ app.post("/api/assinaturas/criar", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Campos obrigatórios: plan_key e email" });
     }
 
-    const planId = PLANS[plan_key];
-    if (!planId) {
+    const plan = PLANS[plan_key];
+    if (!plan) {
       return res.status(400).json({
         ok: false,
         error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
       });
     }
 
-     // STATUS DA ASSINATURA (SEM BANCO)
-// GET /api/assinaturas/status?email=...&plan_key=essencial_mensal
-app.get("/api/assinaturas/status", async (req, res) => {
-  try {
-    const email = String(req.query.email || "").trim();
-    const plan_key = String(req.query.plan_key || "").trim(); // opcional
-
-    if (!email) return res.status(400).json({ ok: false, error: "email é obrigatório" });
-
-    const planId = plan_key ? PLANS[plan_key] : null;
-    if (plan_key && !planId) {
-      return res.status(400).json({
-        ok: false,
-        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`,
-      });
-    }
-
-    const params = {
-      payer_email: email,
-      sort: "date_created",
-      order: "desc",
-      limit: 10,
-    };
-    if (planId) params.preapproval_plan_id = planId;
-
-    const { data } = await axios.get("https://api.mercadopago.com/preapproval/search", {
-      headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
-      params,
-    });
-
-    const results = Array.isArray(data?.results) ? data.results : [];
-    const last = results[0] || null;
-
-    const status = (last?.status || "none").toLowerCase();
-    const active = status === "authorized" || status === "active";
-
-    return res.json({
-      ok: true,
-      email,
-      plan_key: plan_key || null,
-      active,
-      status,
-      preapproval_id: last?.id || null,
-      found: results.length,
-    });
-  } catch (err) {
-    const status = err.response?.status || 500;
-    return res.status(status).json({
-      ok: false,
-      error: "Falha ao consultar status no Mercado Pago",
-      status,
-      mp: err.response?.data || null,
-      message: err.message,
-    });
-  }
-});
-    app.get("/api/health", (req, res) => {
-  res.json({ ok: true, message: "backend online" });
-})
-    
-// ====== CRIAR ASSINATURA RUBI PRO ======
-app.post("/api/assinaturas/criar", async (req, res) => {
-  try {
-    const { plan_key, email } = req.body || {};
-
-    if (!plan_key || !email) {
-      return res.status(400).json({
-        ok: false,
-        error: "Campos obrigatórios: plan_key e email"
-      });
-    }
-
-    const plan = PLANS[plan_key];
-
-    if (!plan) {
-      return res.status(400).json({
-        ok: false,
-        error: `plan_key inválido (${plan_key}).`
-      });
-    }
-
+    // cria assinatura e pega init_point
     const { data } = await axios.post(
       "https://api.mercadopago.com/preapproval",
       {
@@ -196,13 +121,18 @@ app.post("/api/assinaturas/criar", async (req, res) => {
       }
     );
 
-    return res.json({
-      ok: true,
-      redirect_url: data.init_point
-    });
+    if (!data?.init_point) {
+      return res.status(400).json({
+        ok: false,
+        error: "Mercado Pago não retornou init_point ao criar assinatura.",
+        mp: data
+      });
+    }
+
+    return res.json({ ok: true, redirect_url: data.init_point });
 
   } catch (err) {
-    return res.status(500).json({
+    return res.status(err.response?.status || 500).json({
       ok: false,
       error: "Erro ao criar assinatura",
       mp: err.response?.data || null,
@@ -211,41 +141,68 @@ app.post("/api/assinaturas/criar", async (req, res) => {
   }
 });
 
-
-// ====== STATUS DA ASSINATURA ======
+// ====== STATUS DA ASSINATURA (APENAS 1 ROTA) ======
 app.get("/api/assinaturas/status", async (req, res) => {
   try {
-    const email = req.query.email;
+    const email = String(req.query.email || "").trim();
+    const plan_key = String(req.query.plan_key || "").trim(); // opcional
+
+    if (!email) return res.status(400).json({ ok: false, error: "email é obrigatório" });
+
+    const plan = plan_key ? PLANS[plan_key] : null;
+    if (plan_key && !plan) {
+      return res.status(400).json({
+        ok: false,
+        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
+      });
+    }
+
+    const params = {
+      payer_email: email,
+      sort: "date_created",
+      order: "desc",
+      limit: 1
+    };
+
+    // se quiser filtrar pelo plano pro
+    if (plan) params.preapproval_plan_id = plan.id;
 
     const { data } = await axios.get(
       "https://api.mercadopago.com/preapproval/search",
-      {
-        headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
-        params: {
-          payer_email: email,
-          sort: "date_created",
-          order: "desc",
-          limit: 1
-        }
-      }
+      { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` }, params }
     );
 
-    const last = data.results?.[0];
-    const active = last?.status === "authorized" || last?.status === "active";
+    const last = data?.results?.[0] || null;
+    const status = (last?.status || "none").toLowerCase();
+    const active = status === "authorized" || status === "active";
 
-    return res.json({
-      ok: true,
-      active,
-      status: last?.status || "none"
-    });
-
+    return res.json({ ok: true, email, plan_key: plan_key || null, active, status, preapproval_id: last?.id || null });
   } catch (err) {
-    return res.status(500).json({
+    return res.status(err.response?.status || 500).json({
       ok: false,
-      error: "Erro ao consultar status"
+      error: "Erro ao consultar status",
+      mp: err.response?.data || null,
+      message: err.message
     });
   }
 });
+
+// ✅ ROTA: Base44 envia { plan_key, email }
+app.post("/api/assinaturas/criar", async (req, res) => {
+  try {
+    const { plan_key, email } = req.body || {};
+
+    if (!plan_key || !email) {
+      return res.status(400).json({ ok: false, error: "Campos obrigatórios: plan_key e email" });
+    }
+
+    const planId = PLANS[plan_key];
+    if (!planId) {
+      return res.status(400).json({
+        ok: false,
+        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
+      });
+    }
 
 // (Opcional) Webhook para você registrar pagamentos/assinaturas
 app.post("/api/webhooks/mercadopago", (req, res) => {
