@@ -158,39 +158,71 @@ app.get("/api/assinaturas/status", async (req, res) => {
   res.json({ ok: true, message: "backend online" });
 });
 
+    // ====== CRIAR ASSINATURA RUBI PRO ======
+app.post("/api/assinaturas/criar", async (req, res) => {
+  try {
+    const { plan_key, email } = req.body || {};
 
-  
-    // Criar assinatura correta
-const { data } = await axios.post(
-  "https://api.mercadopago.com/preapproval",
-  {
-    reason: "RUBI Pro - Assinatura Mensal",
-    payer_email: email,
-    preapproval_plan_id: planId,
-    back_url: FRONTEND_URL,
-    status: "pending"
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-      "Content-Type": "application/json"
+    if (!plan_key || !email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Campos obrigatórios: plan_key e email"
+      });
     }
+
+    const plan = PLANS[plan_key];
+
+    if (!plan) {
+      return res.status(400).json({
+        ok: false,
+        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
+      });
+    }
+
+    const planId = plan.id;
+
+    // Criar assinatura recorrente no Mercado Pago
+    const { data } = await axios.post(
+      "https://api.mercadopago.com/preapproval",
+      {
+        reason: "RUBI Pro - Assinatura Mensal",
+        payer_email: email,
+        preapproval_plan_id: planId,
+        back_url: FRONTEND_URL,
+        status: "pending"
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    if (!data?.init_point) {
+      return res.status(400).json({
+        ok: false,
+        error: "Falha ao criar assinatura no Mercado Pago.",
+        mp: data
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      redirect_url: data.init_point
+    });
+
+  } catch (err) {
+    const status = err.response?.status || 500;
+
+    return res.status(status).json({
+      ok: false,
+      error: "Erro ao criar assinatura",
+      status,
+      mp: err.response?.data || null,
+      message: err.message
+    });
   }
-);
-
-if (!data?.init_point) {
-  return res.status(400).json({
-    ok: false,
-    error: "Falha ao criar assinatura no Mercado Pago.",
-    mp: data
-  });
-}
-
-return res.status(200).json({
-  ok: true,
-  plan_key,
-  planId,
-  redirect_url: data.init_point
 });
 
 // (Opcional) Webhook para você registrar pagamentos/assinaturas
