@@ -157,6 +157,8 @@ app.get("/api/assinaturas/status", async (req, res) => {
     app.get("/api/health", (req, res) => {
   res.json({ ok: true, message: "backend online" });
 });
+
+
   
     // Criar assinatura correta
 const { data } = await axios.post(
