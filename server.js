@@ -13,12 +13,11 @@ const axios = require("axios");
 
 // 1) Coloque seus PLAN IDs aqui (ou pegue de ENV do Render)
 const PLANS = {
-  essencial_mensal: process.env.MP_PLAN_ESSENCIAL_MENSAL || "51f9c6b5c3134a83bd953a775fa3282f",
-  pro_mensal: process.env.MP_PLAN_PRO_MENSAL || "5b23ac08002c4bfc08a1a35b3fa43a2f",
-  black_mensal: process.env.MP_PLAN_BLACK_MENSAL || "d024551670154b2fa8c9b22bb8544e63",
-  essencial_anual: process.env.MP_PLAN_ESSENCIAL_ANUAL || "51b85976dd354b4fb9e3e2487116caa9",
-  pro_anual: process.env.MP_PLAN_PRO_ANUAL || "25ce3dd87a4742b091398822308d5b4f",
-  black_anual: process.env.MP_PLAN_BLACK_ANUAL || "8c982a7456854ee38c32bad21d23e98a",
+  pro: {
+    id: "25ce3dd87a4742b091398822308d5b4f",
+    name: "RUBI Pro",
+    price: 30
+  }
 };
   // exemplo:
   // pro_mensal: process.env.MP_PLAN_PRO_MENSAL || "COLE_AQUI_O_ID",
