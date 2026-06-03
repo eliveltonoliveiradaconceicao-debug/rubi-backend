@@ -158,7 +158,9 @@ app.get("/api/assinaturas/status", async (req, res) => {
   res.json({ ok: true, message: "backend online" });
 });
 
-    // ====== CRIAR ASSINATURA RUBI PRO ======
+
+    
+// ====== CRIAR ASSINATURA RUBI PRO ======
 app.post("/api/assinaturas/criar", async (req, res) => {
   try {
     const { plan_key, email } = req.body || {};
@@ -175,19 +177,16 @@ app.post("/api/assinaturas/criar", async (req, res) => {
     if (!plan) {
       return res.status(400).json({
         ok: false,
-        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
+        error: `plan_key inválido (${plan_key}).`
       });
     }
 
-    const planId = plan.id;
-
-    // Criar assinatura recorrente no Mercado Pago
     const { data } = await axios.post(
       "https://api.mercadopago.com/preapproval",
       {
         reason: "RUBI Pro - Assinatura Mensal",
         payer_email: email,
-        preapproval_plan_id: planId,
+        preapproval_plan_id: plan.id,
         back_url: FRONTEND_URL,
         status: "pending"
       },
@@ -199,28 +198,53 @@ app.post("/api/assinaturas/criar", async (req, res) => {
       }
     );
 
-    if (!data?.init_point) {
-      return res.status(400).json({
-        ok: false,
-        error: "Falha ao criar assinatura no Mercado Pago.",
-        mp: data
-      });
-    }
-
-    return res.status(200).json({
+    return res.json({
       ok: true,
       redirect_url: data.init_point
     });
 
   } catch (err) {
-    const status = err.response?.status || 500;
-
-    return res.status(status).json({
+    return res.status(500).json({
       ok: false,
       error: "Erro ao criar assinatura",
-      status,
       mp: err.response?.data || null,
       message: err.message
+    });
+  }
+});
+
+
+// ====== STATUS DA ASSINATURA ======
+app.get("/api/assinaturas/status", async (req, res) => {
+  try {
+    const email = req.query.email;
+
+    const { data } = await axios.get(
+      "https://api.mercadopago.com/preapproval/search",
+      {
+        headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
+        params: {
+          payer_email: email,
+          sort: "date_created",
+          order: "desc",
+          limit: 1
+        }
+      }
+    );
+
+    const last = data.results?.[0];
+    const active = last?.status === "authorized" || last?.status === "active";
+
+    return res.json({
+      ok: true,
+      active,
+      status: last?.status || "none"
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: "Erro ao consultar status"
     });
   }
 });
