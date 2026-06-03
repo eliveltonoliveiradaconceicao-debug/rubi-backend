@@ -159,36 +159,37 @@ app.get("/api/assinaturas/status", async (req, res) => {
 });
     
     // Busca o plano e pega o init_point (link de checkout)
-    const { data } = await axios.get(
-      `https://api.mercadopago.com/preapproval_plan/${planId}`,
-      { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` } }
-    );
-
-    if (!data?.init_point) {
-      return res.status(400).json({
-        ok: false,
-        error: "Plano não retornou init_point. Confirme se esse ID é de preapproval_plan.",
-        planId,
-        mp: data
-      });
+    // Criar assinatura correta
+const { data } = await axios.post(
+  "https://api.mercadopago.com/preapproval",
+  {
+    reason: "RUBI Pro - Assinatura Mensal",
+    payer_email: email,
+    preapproval_plan_id: planId,
+    back_url: FRONTEND_URL,
+    status: "pending"
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+      "Content-Type": "application/json"
     }
-
-    return res.status(200).json({
-      ok: true,
-      plan_key,
-      planId,
-      redirect_url: data.init_point
-    });
-  } catch (err) {
-    const status = err.response?.status || 500;
-    return res.status(status).json({
-      ok: false,
-      error: "Falha ao obter init_point do plano",
-      status,
-      mp: err.response?.data || null,
-      message: err.message
-    });
   }
+);
+
+if (!data?.init_point) {
+  return res.status(400).json({
+    ok: false,
+    error: "Falha ao criar assinatura no Mercado Pago.",
+    mp: data
+  });
+}
+
+return res.status(200).json({
+  ok: true,
+  plan_key,
+  planId,
+  redirect_url: data.init_point
 });
 
 // (Opcional) Webhook para você registrar pagamentos/assinaturas
