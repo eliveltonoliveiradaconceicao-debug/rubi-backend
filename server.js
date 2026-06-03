@@ -187,23 +187,6 @@ app.get("/api/assinaturas/status", async (req, res) => {
   }
 });
 
-// ✅ ROTA: Base44 envia { plan_key, email }
-app.post("/api/assinaturas/criar", async (req, res) => {
-  try {
-    const { plan_key, email } = req.body || {};
-
-    if (!plan_key || !email) {
-      return res.status(400).json({ ok: false, error: "Campos obrigatórios: plan_key e email" });
-    }
-
-    const planId = PLANS[plan_key];
-    if (!planId) {
-      return res.status(400).json({
-        ok: false,
-        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
-      });
-    }
-
 // (Opcional) Webhook para você registrar pagamentos/assinaturas
 app.post("/api/webhooks/mercadopago", (req, res) => {
   console.log("WEBHOOK MP:", req.body);
