@@ -180,6 +180,90 @@ app.post("/api/webhooks/mercadopago", (req, res) => {
   res.sendStatus(200);
 });
 
+const crypto = require("crypto");
+
+// ====== PIX (QR + COPIA E COLA) - RUBI PRO ======
+app.post("/api/pix/criar", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ ok: false, error: "email é obrigatório" });
+    }
+
+    // valor do seu plano Pro
+    const amount = PLANS.pro.price; // 30
+
+    // Idempotency-Key recomendado/obrigatório para evitar pagamentos duplicados
+    // (Mercado Pago recomenda enviar X-Idempotency-Key) :contentReference[oaicite:2]{index=2}
+    const idempotencyKey = crypto.randomUUID();
+
+    const { data } = await axios.post(
+      "https://api.mercadopago.com/v1/payments",
+      {
+        transaction_amount: amount,
+        description: "RUBI Pro - Mensalidade (Pix)",
+        payment_method_id: "pix",
+        payer: { email },
+        external_reference: `RUBI_PRO_PIX_${email}`,
+        notification_url: `${BACKEND_URL}/api/webhooks/mercadopago` // opcional
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "X-Idempotency-Key": idempotencyKey
+        }
+      }
+    );
+
+    const tx = data?.point_of_interaction?.transaction_data;
+
+    return res.json({
+      ok: true,
+      payment_id: data?.id || null,
+      status: data?.status || null,
+      ticket_url: tx?.ticket_url || null,
+      qr_code: tx?.qr_code || null, // copia e cola
+      qr_code_base64: tx?.qr_code_base64 || null // imagem do QR
+    });
+  } catch (err) {
+    return res.status(err.response?.status || 500).json({
+      ok: false,
+      error: "Erro ao criar Pix",
+      mp: err.response?.data || null,
+      message: err.message
+    });
+  }
+});
+
+app.get("/api/pix/status", async (req, res) => {
+  try {
+    const payment_id = String(req.query.payment_id || "").trim();
+    if (!payment_id) {
+      return res.status(400).json({ ok: false, error: "payment_id é obrigatório" });
+    }
+
+    const { data } = await axios.get(
+      `https://api.mercadopago.com/v1/payments/${payment_id}`,
+      { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` } }
+    );
+
+    return res.json({
+      ok: true,
+      payment_id,
+      status: data?.status || null,          // approved | pending | rejected | etc
+      status_detail: data?.status_detail || null
+    });
+  } catch (err) {
+    return res.status(err.response?.status || 500).json({
+      ok: false,
+      error: "Erro ao consultar Pix",
+      mp: err.response?.data || null,
+      message: err.message
+    });
+  }
+});
+
 const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 // CACHE SIMPLES EM MEMÓRIA
