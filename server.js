@@ -90,56 +90,38 @@ app.get("/api/health", (req, res) => {
 app.post("/api/assinaturas/criar", async (req, res) => {
   try {
     const { plan_key, email } = req.body || {};
-
-    if (!plan_key || !email) {
-      return res.status(400).json({ ok: false, error: "Campos obrigatórios: plan_key e email" });
-    }
+    if (!plan_key || !email) return res.status(400).json({ ok:false, error:"Campos obrigatórios: plan_key e email" });
 
     const plan = PLANS[plan_key];
-    if (!plan) {
-      return res.status(400).json({
-        ok: false,
-        error: `plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}`
-      });
-    }
+    if (!plan) return res.status(400).json({ ok:false, error:`plan_key inválido (${plan_key}). Válidos: ${Object.keys(PLANS).join(", ")}` });
 
-    // cria assinatura e pega init_point
     const { data } = await axios.post(
       "https://api.mercadopago.com/preapproval",
       {
         reason: "RUBI Pro - Assinatura Mensal",
+        external_reference: `RUBI_${email}`,
         payer_email: email,
-        preapproval_plan_id: plan.id,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: "months",
+          transaction_amount: plan.price,
+          currency_id: "BRL"
+        },
         back_url: FRONTEND_URL,
         status: "pending"
       },
-      {
-        headers: {
-          Authorization: `Bearer ${MP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
+      { headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}`, "Content-Type": "application/json" } }
     );
 
     if (!data?.init_point) {
-      return res.status(400).json({
-        ok: false,
-        error: "Mercado Pago não retornou init_point ao criar assinatura.",
-        mp: data
-      });
+      return res.status(400).json({ ok:false, error:"Mercado Pago não retornou init_point.", mp:data });
     }
-    
-console.log("MP ERRO:", err.response?.data || err.message);
-    return res.json({
-  ok: true,
-  redirect_url: data.init_point,
-  init_point: data.init_point
-});
 
+    return res.json({ ok:true, redirect_url: data.init_point, init_point: data.init_point });
   } catch (err) {
     return res.status(err.response?.status || 500).json({
-      ok: false,
-      error: "Erro ao criar assinatura",
+      ok:false,
+      error:"Erro ao criar assinatura",
       mp: err.response?.data || null,
       message: err.message
     });
