@@ -128,8 +128,13 @@ app.post("/api/assinaturas/criar", async (req, res) => {
         mp: data
       });
     }
-
-    return res.json({ ok: true, redirect_url: data.init_point });
+    
+console.log("MP ERRO:", err.response?.data || err.message);
+    return res.json({
+  ok: true,
+  redirect_url: data.init_point,
+  init_point: data.init_point
+});
 
   } catch (err) {
     return res.status(err.response?.status || 500).json({
