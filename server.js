@@ -281,77 +281,112 @@ function calculateScore(business) {
 }
 
 app.post("/api/prospect", async (req, res) => {
+  const { niche, city, state, noWebsiteOnly = false, lowRatingOnly = false } = req.body || {};
+
+  if (!GOOGLE_API_KEY) {
+    return res.status(503).json({
+      ok: false,
+      code: "GOOGLE_PLACES_API_KEY_MISSING",
+      error: "A chave GOOGLE_PLACES_API_KEY não está configurada no Render."
+    });
+  }
+
+  if (![niche, city, state].every(v => typeof v === "string" && v.trim())) {
+    return res.status(400).json({
+      ok: false,
+      code: "INVALID_SEARCH_INPUT",
+      error: "Informe nicho, cidade e estado."
+    });
+  }
+
+  const cacheKey = JSON.stringify({
+    niche: niche.trim(), city: city.trim(), state: state.trim(),
+    noWebsiteOnly: Boolean(noWebsiteOnly), lowRatingOnly: Boolean(lowRatingOnly)
+  });
+
+  if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_DURATION) {
+    return res.json(cache[cacheKey].data);
+  }
+
   try {
-    const { niche, city, state, noWebsiteOnly, lowRatingOnly } = req.body;
-
-    const cacheKey = `${niche}-${city}-${state}-${noWebsiteOnly}-${lowRatingOnly}`;
-
-    if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_DURATION) {
-      return res.json(cache[cacheKey].data);
-    }
-
-    const query = `${niche} em ${city} ${state}`;
-
+    const query = `${niche.trim()} em ${city.trim()} ${state.trim()}`;
     const searchResponse = await axios.get(
       "https://maps.googleapis.com/maps/api/place/textsearch/json",
-      {
-        params: {
-          query,
-          key: GOOGLE_API_KEY
-        }
-      }
+      { params: { query, key: GOOGLE_API_KEY }, timeout: 15000 }
     );
+    const searchData = searchResponse.data || {};
+    const googleStatus = searchData.status;
 
-    if (searchResponse.data.status !== "OK") {
-      return res.json({ google_status: searchResponse.data.status });
+    if (googleStatus === "ZERO_RESULTS") {
+      cache[cacheKey] = { timestamp: Date.now(), data: [] };
+      return res.json([]);
     }
 
-    const results = searchResponse.data.results;
+    if (googleStatus !== "OK") {
+      const explanations = {
+        REQUEST_DENIED: "O Google recusou a solicitação. Confira a chave, a API Places habilitada e a conta de cobrança do Google Cloud.",
+        OVER_QUERY_LIMIT: "A cota ou o limite de uso do Google Places foi excedido. Confira cotas e faturamento no Google Cloud.",
+        INVALID_REQUEST: "A consulta enviada ao Google é inválida. Confira nicho, cidade e estado.",
+        UNKNOWN_ERROR: "O Google retornou um erro temporário. Tente novamente."
+      };
+      console.error("Google Places Text Search status:", googleStatus, searchData.error_message || "");
+      return res.status(502).json({
+        ok: false,
+        code: googleStatus || "GOOGLE_PLACES_ERROR",
+        error: explanations[googleStatus] || "A API do Google Places não conseguiu concluir a busca.",
+        google_status: googleStatus || "UNKNOWN",
+        google_message: searchData.error_message || null
+      });
+    }
 
-    const detailedResults = await Promise.all(
-      results.slice(0, 15).map(async (place) => {
-        const details = await axios.get(
+    const places = Array.isArray(searchData.results) ? searchData.results.slice(0, 20) : [];
+    const detailResults = await Promise.allSettled(
+      places.map(async (place) => {
+        const response = await axios.get(
           "https://maps.googleapis.com/maps/api/place/details/json",
           {
             params: {
               place_id: place.place_id,
-              fields:
-                "name,formatted_phone_number,website,rating,formatted_address,business_status,geometry",
+              fields: "name,formatted_phone_number,website,rating,formatted_address,business_status,geometry",
               key: GOOGLE_API_KEY
-            }
+            },
+            timeout: 15000
           }
         );
-
-        const business = details.data.result;
-
+        const detailsData = response.data || {};
+        if (detailsData.status !== "OK" || !detailsData.result) {
+          throw new Error(`Place Details: ${detailsData.status || "UNKNOWN"}`);
+        }
+        const business = detailsData.result;
         business.score = calculateScore(business);
-
         return business;
       })
     );
 
-    let filtered = detailedResults;
-
-    if (noWebsiteOnly) {
-      filtered = filtered.filter(b => !b.website);
+    const failedDetails = detailResults.filter(item => item.status === "rejected");
+    if (failedDetails.length) {
+      console.error("Google Places Details failures:", failedDetails.length, "of", places.length);
     }
 
-    if (lowRatingOnly) {
-      filtered = filtered.filter(b => b.rating && b.rating < 4.0);
-    }
+    let filtered = detailResults
+      .filter(item => item.status === "fulfilled")
+      .map(item => item.value);
+
+    if (noWebsiteOnly) filtered = filtered.filter(b => !b.website);
+    if (lowRatingOnly) filtered = filtered.filter(b => typeof b.rating === "number" && b.rating < 4.0);
 
     filtered.sort((a, b) => b.score - a.score);
-
-    cache[cacheKey] = {
-      timestamp: Date.now(),
-      data: filtered
-    };
-
-    res.json(filtered);
-
+    cache[cacheKey] = { timestamp: Date.now(), data: filtered };
+    return res.json(filtered);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Erro interno" });
+    const googleStatus = error.response?.data?.status;
+    console.error("Erro na prospecção Google Places:", googleStatus || error.code || error.message);
+    return res.status(error.code === "ECONNABORTED" ? 504 : 502).json({
+      ok: false,
+      code: error.code || "PROSPECT_REQUEST_FAILED",
+      error: "Não foi possível concluir a busca no Google Places. Confira a API, a cobrança e tente novamente.",
+      google_status: googleStatus || null
+    });
   }
 });
 
